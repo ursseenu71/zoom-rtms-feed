@@ -5,15 +5,15 @@ Comment: Update CAREMAIL-28949 status to ready for review and add comment: Testi
 Jira_url: https://jira.walmart.com/browse/CAREMAIL-28949
 ]
 
-Srinivaskumar@XXXXXX.com
+Hemanth Paluri:
 [
 Action Type: Status_Update
 Old Status: In Progress
 New Status: Completed
-Jira_url: https://jira.walmart.com/browse/CAREMAIL-28949
+Jira_url: https://jira.walmart.com/browse/CAREMAIL-42343
 ],
 
-anjani@XXXXXX.com
+Anjani:
 
 [
 Action Type: Create_Epic_And_Story
@@ -26,7 +26,16 @@ Description: Testing the action items generation flow
 ]
 ]
 
-rahul@XXXXXX.com
+Rahul:
+[
+Action Type: Create_Story_Ticket
+Title: Testing the action items generation flow
+Description: Testing the action items generation flow
+Epic_Link: https://jira.walmart.com/browse/CAREMAIL-123456
+]
+
+Shyam:
+
 [
 Action Type: Create_Story_Ticket
 Title: Testing the action items generation flow

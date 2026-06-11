@@ -10,10 +10,8 @@ import { promisify } from 'util';
 import http from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
-import {post} from './http-service.js'
+import {post} from './http-service.js';
 
-
-import { startLocalTranscoding } from './localTranscodedStreamer.js';
 import helmet from "helmet";
 import say from "say";
 
@@ -70,12 +68,17 @@ const __dirname = path.dirname(__filename);
 // Serve the frontend static files (the Zoom App iframe content)
 app.use(express.static(path.join(__dirname, 'public')));
 
-const stanIntroText = "Welcome! I am STAN, your Sprint Tracking and Notification Assistant monitoring this call. I can summarize action items or update Jira tickets. Just say: 'Hey STAN, share the action items', OR, 'Hey STAN, update the jira tickets'";
-const stanActionItemsACK = "STAN SPEAKING! Sure! Let me go-ahead and generate the action items based on the conversations so far";
-const stanFinalUpdatesAck = "STAN SPEAKING! Sure! Let me go-ahead and post the final updates on Jira";
+const stanIntroText = "Welcome! I am STAN, your Sprint Tracking and Notification Assistant";
+const stanActionItemsACK = "Sure! Let me go-ahead and generate the action items, That is from STAN";
+const stanFinalUpdatesAck = "Sure! Let me go-ahead and post the final updates on Jira, That is from STAN";
+const stanShortResponse = "Sure!";
 const stanIntroAudio = path.join(__dirname, 'stan-intro.wav');
 const actionItemsAckAudio = path.join(__dirname, 'stan-aiAck.wav');
+const stanShortResponseAudio = path.join(__dirname, 'stan-short-response.wav');
 const finalUpdatesAckAckAudio = path.join(__dirname, 'stan-finalUpdatesAck.wav');
+const ACTION_ITEM_KEYWORDS = ["Hey Stan, can you generate the action items for this meeting", "Hello Stan, generate the action items for this meeting", "generate the action items for this meeting"];
+const JIRA_UPDATE_KEYWORDS = ["Hey Stan, can you update the tickets with the action items", "update the tickets with the action items"];
+const SKIP_KEYWORDS = ["I am STAN", "STAN SPEAKING", "STAN SPEAKING!", "I am STAN", "I'm STAN", "That is from STAN"];
 
 let actionItemsText = fs.readFileSync(path.join(__dirname, 'action-items.txt'), 'utf8');
 let finalUpdates;
@@ -88,9 +91,6 @@ const CLIENT_ID = process.env.ZOOM_CLIENT_ID;
 const CLIENT_SECRET = process.env.ZOOM_CLIENT_SECRET;
 const WEBHOOK_PATH = process.env.WEBHOOK_PATH || '/webhook';
 
-const ACTION_ITEM_KEYWORDS = ["Hey Stan, can you generate the action items for this meeting"];
-const JIRA_UPDATE_KEYWORDS = ["Hey Stan, can you update the jira tickets based on the action items"];
-const SKIP_KEYWORDS = ["I am STAN", "STAN SPEAKING", "STAN SPEAKING!", "I am STAN", "I'm STAN"];
 let isConversationTrackingON = false;
 
 // Middleware to parse JSON bodies in incoming requests
@@ -123,11 +123,14 @@ io.on('connection', (socket) => {
 
     socket.on("ACTIVATE_STAN", () => {
         console.log('STAN Activated! Generating audio Intro');
-    //     generateAudio(stanIntroText, stanIntroAudio);
-        // generateAudio(stanActionItemsACK, actionItemsAckAudio);
-        // generateAudio(stanFinalUpdatesAck, finalUpdatesAckAckAudio);
+//         generateAudio(stanIntroText, stanIntroAudio);
+//         generateAudio(stanActionItemsACK, actionItemsAckAudio);
+//         generateAudio(stanFinalUpdatesAck, finalUpdatesAckAckAudio);
+            generateAudio(stanShortResponse, stanShortResponseAudio);
         // 1. Read the audio file as a binary buffer
         playStanAudio(stanIntroAudio);
+    //    playStanAudio(actionItemsAckAudio);
+    //    playStanAudio(finalUpdatesAckAckAudio);
     });
 
     socket.on('PAUSE_CONVERSATION_TRACKING', () => {
@@ -243,43 +246,6 @@ app.post(WEBHOOK_PATH, (req, res) => {
         stopStreaming(rtms_stream_id);
     }
 });
-
-/*// 🆕 Route to serve the player page
-app.get('/player', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <title>Live Stream</title>
-        </head>
-        <body>
-            <h2>Live Stream</h2>
-            <video id="videoPlayer" width="720" height="480" controls autoplay></video>
-
-            <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-            <script>
-                if (Hls.isSupported()) {
-                    var video = document.getElementById('videoPlayer');
-                    var hls = new Hls();
-                    hls.loadSource('/hls/stream.m3u8');
-                    hls.attachMedia(video);
-                    hls.on(Hls.Events.MANIFEST_PARSED, function () {
-                        video.play();
-                    });
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = '/hls/stream.m3u8';
-                    video.addEventListener('loadedmetadata', function () {
-                        video.play();
-                    });
-                } else {
-                    alert('Your browser does not support HLS playback.');
-                }
-            </script>
-        </body>
-        </html>
-    `);
-});*/
 
 // Function to generate a signature for authentication
 function generateSignature(CLIENT_ID, meetingUuid, streamId, CLIENT_SECRET) {
@@ -455,12 +421,7 @@ function connectToSignalingWebSocket(meetingUuid, streamId, serverUrl) {
 function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocket) {
     console.log(`Connecting to media WebSocket at ${mediaUrl}`);
 
-    const { videoStream, audioStream, ffmpeg } = startLocalTranscoding();
-
     const conn = activeConnections.get(streamId);
-    conn.videoStream = videoStream;
-    conn.audioStream = audioStream;
-    conn.ffmpegProcess = ffmpeg;
     conn.mediaUrl = mediaUrl;
 
     const mediaWs = new WebSocket(mediaUrl, { rejectUnauthorized: false });
@@ -531,7 +492,7 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                 console.log(queue);
                 io.emit('STAN_TEXT_RESPONSE', {
                     speaker: msg.content.user_name,
-                    text: formatedTranscript,
+                    text: transcript,
                     timestamp: new Date().toLocaleTimeString()
                 });
                 const matchedKeyword = ACTION_ITEM_KEYWORDS.find(keyword => transcript.toLowerCase().includes(keyword.toLowerCase()));
@@ -550,39 +511,16 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                 const jiraUpdateKeyWord = JIRA_UPDATE_KEYWORDS.find(keyword => transcript.includes(keyword));
                 if (jiraUpdateKeyWord) {
                     console.log('Updating the Jira')
-                    finalUpdates = post(actionItemsText);
+                //    finalUpdates = post(actionItemsText);
                     playStanAudio(finalUpdatesAckAckAudio);
                     io.emit('STAN_TEXT_RESPONSE', {
                         speaker: msg.content.user_name,
-                        text: finalUpdates,
+                        text: `Final Update: \n ${actionItemsText}`,
                         timestamp: new Date().toLocaleTimeString()
                     });
                 }
             }
 
-/*            if (msg.msg_type === 14 && msg.content?.data) {
-                const { data: audioData } = msg.content;
-                const buffer = Buffer.from(audioData, 'base64');
-                const conn = activeConnections.get(streamId);
-
-                if (conn?.audioStream?.writable) {
-                    conn.audioStream.write(buffer);
-                } else {
-                    console.warn('⚠️ Audio stream not writable');
-                }
-            }
-
-            if (msg.msg_type === 15 && msg.content?.data) {
-                const { data: videoData } = msg.content;
-                const buffer = Buffer.from(videoData, 'base64');
-                const conn = activeConnections.get(streamId);
-
-                if (conn?.videoStream?.writable) {
-                    conn.videoStream.write(buffer);
-                } else {
-                    console.warn('⚠️ Video stream not writable');
-                }
-            }*/
         } catch (err) {
             console.error('❌ Error processing media message:', err);
         }
@@ -625,10 +563,6 @@ function stopStreaming(streamId) {
     }
     if (conn.signaling) {
         conn.signaling.close();
-    }
-    if (conn.ffmpegProcess) {
-        console.log('🛑 Stopping FFmpeg process');
-        conn.ffmpegProcess.kill('SIGINT');
     }
 
     activeConnections.delete(streamId);

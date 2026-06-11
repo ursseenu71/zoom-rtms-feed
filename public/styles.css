@@ -68,9 +68,8 @@ h3 { margin-top: 0; color: #111; border-bottom: 2px solid #0e71eb; padding-botto
 }
 
 .smooth-blink {
-    color: #ff4d4d;
-    font-weight: bold;
-    animation: pulse-animation 1.5s ease-in-out infinite alternate;
+    color: #721c24;
+ //   animation: pulse-animation 1.5s ease-in-out infinite alternate;
 }
 
 @keyframes pulse-animation {
@@ -78,3 +77,5 @@ h3 { margin-top: 0; color: #111; border-bottom: 2px solid #0e71eb; padding-botto
     to { opacity: 0.2; }
 }
 
+#stream-container {
+}
