@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom App Embedded Iframe</title>
+    <script src="https://appssdk.zoom.us/sdk.js?v=0.0.10"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h3>💬 STAN - Live Sprint Assistant</h3>
+    <Button class="activate-stan-btn" id="activate-stan-btn" onclick="triggerStan()">Activate Stan</Button>
+    <div class="smooth-blink" id="status"></div>
+    <div id="stream-container" hidden></div>
+</body>
+<script>
+//    debugger;
+    // 1. Initialize the Zoom Apps SDK
+    zoomSdk.config({
+        capabilities: ['getMeetingContext'] // Request capabilities your app needs
+    }).then(() => {
+        console.log("Zoom SDK configured successfully");
+    }).catch((error) => {
+        console.error("Zoom SDK configuration failed", error);
+    });
+
+    // 2. Connect to your Node.js backend WebSocket
+    const socket = io();
+    const chatContainer = document.getElementById('stream-container');
+
+    // 1. Initialize the Web Audio API context
+    // Modern browsers require a user interaction to start an AudioContext
+    let audioCtx;
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function triggerStan() {
+        console.log('STAN Initiated! Reading audio file to stream...');
+        socket.emit("ACTIVATE_STAN");
+        document.getElementById('activate-stan-btn').disabled = true;
+        document.getElementById('status').innerText = "STAN is Active. Conversation Tracking In Progress!";
+    }
+
+    socket.on("PLAY_STAN_AUDIO", async (incomingBuffer) => {
+        socket.emit("PAUSE_CONVERSATION_TRACKING");
+        document.getElementById('status').innerText = "STAN is speaking: Conversation tracking is temporarily on hold.";
+        console.log('Playing STAN audio')
+        try {
+//            document.getElementById('stream-container').innerText = "\"Welcome! I'm STAN, your Sprint Tracking and Notification Assistant monitoring this call. I can summarize action items or update Jira tickets. Just say: 'Hey STAN, share the action items' or 'Hey STAN, update the jira tickets'.\"";
+            initAudio();
+
+            // incomingBuffer arrives as an ArrayBuffer natively via Socket.io binary support
+            // 3. Decode the binary audio data into a playable audio buffer
+            const audioBuffer = await audioCtx.decodeAudioData(incomingBuffer);
+
+            // 4. Create an audio source node and link it to your speakers
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioCtx.destination);
+
+            // 5. Play!
+            source.start(0);
+
+            source.onended = () => {
+                console.log('Audio play completed');
+                document.getElementById('status').innerText = "STAN is Active. Conversation Tracking In Progress!";
+                socket.emit("START_CONVERSATION_TRACKING");
+            };
+
+        } catch (error) {
+            console.error("Error decoding or playing audio via WebSocket:", error);
+            document.getElementById('status').innerText = "Audio playback error.";
+            socket.emit("START_CONVERSATION_TRACKING");
+            document.getElementById('status').innerText = "STAN is Active. Conversation Tracking In Progress!";
+        }
+    });
+
+    socket.on('connect', () => {
+    });
+
+    socket.on('STAN_TEXT_RESPONSE', (data) => {
+        document.getElementById('stream-container').hidden = false;
+        const lineElement = document.createElement('div');
+        lineElement.className = 'chat-line';
+        lineElement.innerHTML = `
+                <div>
+                    <div class="speaker">${data.speaker}</div>
+                    <div class="time">${data.timestamp}</div>
+                    <div class="text">${data.text}</div>
+                </div>
+            `;
+
+        // Append the text block to the stream layout
+        chatContainer.appendChild(lineElement);
+
+        // Auto-scroll to the bottom as people talk in real time
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+
+    // 2. Wrap the Zoom SDK config so errors don't crash the app
+    zoomSdk.config({ version: "0.0.10", capabilities: ['getMeetingContext'] })
+        .then(() => {
+            console.log("Zoom SDK successfully initialized inside the Zoom Client!");
+        })
+        .catch((err) => {
+            // Log the error but don't let it crash your socket interface
+            console.warn("Zoom SDK failed to init. Running in standard web browser? Details:", err.message);
+            document.body.innerHTML += `<div style="background:#f8d7da; padding:10px; color:#721c24;">Initialization Interrupted: ${err.message}</div>`;
+        });
+</script>
+</html>
