@@ -10,17 +10,18 @@ import { promisify } from 'util';
 import http from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
-import {post} from './http-service.js';
+import {post} from './services/http-service.js';
 
 import helmet from "helmet";
 import say from "say";
+import {chatWithTranscript} from "./LLM.js";
 
 // Load environment variables from a .env file
 dotenv.config();
 
 const app = express();
 const queue = [];
-
+let jiraTickets = [];
 const server = http.createServer(app);
 // Enable CORS so the Zoom App iframe can connect securely
 const io = new Server(server, {
@@ -68,17 +69,9 @@ const __dirname = path.dirname(__filename);
 // Serve the frontend static files (the Zoom App iframe content)
 app.use(express.static(path.join(__dirname, 'public')));
 
-const stanIntroText = "Welcome! I am STAN, your Sprint Tracking and Notification Assistant";
-const stanActionItemsACK = "Sure! Let me go-ahead and generate the action items, That is from STAN";
-const stanFinalUpdatesAck = "Sure! Let me go-ahead and post the final updates on Jira, That is from STAN";
-const stanShortResponse = "Sure!";
-const stanIntroAudio = path.join(__dirname, 'stan-intro.wav');
-const actionItemsAckAudio = path.join(__dirname, 'stan-aiAck.wav');
 const stanShortResponseAudio = path.join(__dirname, 'stan-short-response.wav');
-const finalUpdatesAckAckAudio = path.join(__dirname, 'stan-finalUpdatesAck.wav');
-const ACTION_ITEM_KEYWORDS = ["Hey Stan, can you generate the action items for this meeting", "Hello Stan, generate the action items for this meeting", "generate the action items for this meeting"];
-const JIRA_UPDATE_KEYWORDS = ["Hey Stan, can you update the tickets with the action items", "update the tickets with the action items"];
-const SKIP_KEYWORDS = ["I am STAN", "STAN SPEAKING", "STAN SPEAKING!", "I am STAN", "I'm STAN", "That is from STAN"];
+const ACTION_ITEM_KEYWORDS = ["Hey Stan", "Hey, Stan", "Hey,Stan", "Hello, Stan", "Hello Stan", "Hello,Stan"];
+// const SKIP_KEYWORDS = ["I am STAN", "STAN SPEAKING", "STAN SPEAKING!", "I am STAN", "I'm STAN", "That is from STAN"];
 
 let actionItemsText = fs.readFileSync(path.join(__dirname, 'action-items.txt'), 'utf8');
 let finalUpdates;
@@ -121,16 +114,19 @@ const INITIAL_DUPLICATE_SIGNAL_RETRY_DELAY_MS = Number(process.env.INITIAL_DUPLI
 io.on('connection', (socket) => {
     console.log('A Zoom App instance connected:', socket.id);
 
-    socket.on("ACTIVATE_STAN", () => {
+    socket.on("ACTIVATE_STAN", async () => {
         console.log('STAN Activated! Generating audio Intro');
-//         generateAudio(stanIntroText, stanIntroAudio);
-//         generateAudio(stanActionItemsACK, actionItemsAckAudio);
-//         generateAudio(stanFinalUpdatesAck, finalUpdatesAckAckAudio);
-            generateAudio(stanShortResponse, stanShortResponseAudio);
-        // 1. Read the audio file as a binary buffer
-        playStanAudio(stanIntroAudio);
-    //    playStanAudio(actionItemsAckAudio);
-    //    playStanAudio(finalUpdatesAckAckAudio);
+        const llmResponse = await chatWithTranscript("STAN is activated from the Zoom App. Generate a greeting message from STAN end to the participants");
+        console.log("\n--- Raw JSON Payload Received From STAN ---");
+        console.log(JSON.stringify(llmResponse, null, 2));
+        console.log("-------------------------------------------\n");
+        const {audioResponse, uiDisplay} = llmResponse;
+//        const {summary, actionItems, jiraUpdates, slackNotifications} = uiDisplay;
+
+        // API Call to JIRA MCP Server to get the context of the projects that the participants belong to. User the access token of the participants to pull the jira information.
+
+
+        generateAudio(llmResponse, stanShortResponseAudio);
     });
 
     socket.on('PAUSE_CONVERSATION_TRACKING', () => {
@@ -149,7 +145,7 @@ io.on('connection', (socket) => {
 
 function playStanAudio(fileName) {
     console.log("playing Stan Audio");
-    isConversationTrackingON = false;
+//    isConversationTrackingON = false;
     fs.readFile(fileName, (err, buffer) => {
         if (err) {
             console.error("Failed to read audio file:", err);
@@ -160,12 +156,43 @@ function playStanAudio(fileName) {
     });
 }
 
-function generateAudio(text, outputFilePath) {
-    say.export(text, "Daniel", 1.0, outputFilePath, (err) => {
+function generateAudio(llmResponse, outputFilePath) {
+    say.export(llmResponse.audioResponse, "Daniel", 1.0, outputFilePath, (err) => {
         if (err) {
             return console.error("❌ Failed to generate audio:", err);
         }
         console.log(`✅ Success! Audio file saved directly to: ${outputFilePath}`);
+        console.log('playing the audio now');
+        playStanAudio(outputFilePath);
+        const { audioResponse, uiDisplay } = llmResponse;
+
+        // Define a helper function to emit messages and reduce boilerplate
+        const emitStanMessage = (data) => {
+            io.emit('STAN_TEXT_RESPONSE', {
+                speaker: 'STAN',
+                text: JSON.stringify(data),
+                timestamp: new Date().toLocaleTimeString()
+            });
+        };
+
+        // 1. Always emit the audio response
+        emitStanMessage(audioResponse);
+
+        // 2. Loop through the optional UI display fields and emit if they exist
+        const updateFields = [
+            'actionItems',
+            'jiraUpdates',
+            'slackNotifications',
+            'emailUpdates',
+            'serviceNowIncidentUpdates'
+        ];
+
+        updateFields.forEach(field => {
+            const targetArray = uiDisplay[field];
+            if (Array.isArray(targetArray) && targetArray.length > 0) {
+                emitStanMessage(targetArray);
+            }
+        });
     });
 }
 
@@ -317,7 +344,6 @@ function connectToSignalingWebSocket(meetingUuid, streamId, serverUrl) {
         ws.send(JSON.stringify(handshake));
         console.log('Sent handshake to signaling server');
 
-
     });
 
     ws.on('message', (data) => {
@@ -366,6 +392,12 @@ function connectToSignalingWebSocket(meetingUuid, streamId, serverUrl) {
                 console.error(`[Signaling] Handshake failed for stream ${streamId}:`, msg);
                 closeSocketQuietly(ws);
             }
+        }
+
+        // Everytime a new participant joins, pull the jira tickets related to the participant.
+        if (msg.msg_type === 6) {
+           // TODO: Enable Jira MCP Server call once the SSP is approved to make API calls from Zoom App
+       //     jiraTickets.push(fetchMeetingJiraTickets(msg.event.participants));
         }
 
         // Respond to keep-alive requests
@@ -458,7 +490,7 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
         console.log('✅ Media WebSocket connected and handshake sent');
     });
 
-    mediaWs.on('message', (data) => {
+    mediaWs.on('message', async (data) => {
         try {
             const msg = JSON.parse(data.toString());
 
@@ -478,7 +510,7 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
             }
 
             if (msg.msg_type === 17) {
-                if (!isConversationTrackingON || SKIP_KEYWORDS.find(keyword => msg.content.data.toLowerCase().includes(keyword.toLowerCase()))) {
+                if (!isConversationTrackingON) {
                     console.log('Conversation Tracking is currently not enabled or transcripts have skip keywords. Not recording the current transcript')
                     return;
                 }
@@ -498,26 +530,29 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                 const matchedKeyword = ACTION_ITEM_KEYWORDS.find(keyword => transcript.toLowerCase().includes(keyword.toLowerCase()));
                 console.log("Transcript is " + transcript.toLowerCase(), "matchedKeyWord - " + matchedKeyword)
                 if (matchedKeyword) {
-                    console.log(`Triggered Keyword ${matchedKeyword}. Making LLM Call with the conversation`)
                     isConversationTrackingON = false;
-                    playStanAudio(actionItemsAckAudio);
-                    // actionItemsText = post(queue)
                     io.emit('STAN_TEXT_RESPONSE', {
-                        speaker: msg.content.user_name,
-                        text: actionItemsText,
+                        speaker: "STAN",
+                        text: "Processing the request..",
                         timestamp: new Date().toLocaleTimeString()
                     });
-                }
-                const jiraUpdateKeyWord = JIRA_UPDATE_KEYWORDS.find(keyword => transcript.includes(keyword));
-                if (jiraUpdateKeyWord) {
-                    console.log('Updating the Jira')
-                //    finalUpdates = post(actionItemsText);
-                    playStanAudio(finalUpdatesAckAckAudio);
-                    io.emit('STAN_TEXT_RESPONSE', {
+                    console.log(`Triggered Keyword ${matchedKeyword}. Making LLM Call with the conversation`)
+                    const llmResponse = await chatWithTranscript(queue, jiraTickets);
+                    console.log("\n--- Raw JSON Payload Received From STAN ---");
+                    console.log(JSON.stringify(llmResponse, null, 2));
+                    console.log("-------------------------------------------\n");
+                    const { audioResponse, uiDisplay } = llmResponse;
+                    const { summary, actionItems, jiraUpdates, slackNotifications, emailUpdates, serviceNowIncidentUpdates } = uiDisplay;
+
+                    generateAudio(llmResponse, stanShortResponseAudio);
+
+                    console.log(`Audio response from LLM is ${audioResponse}`)
+
+                    /*io.emit('STAN_TEXT_RESPONSE', {
                         speaker: msg.content.user_name,
-                        text: `Final Update: \n ${actionItemsText}`,
+                        text: actionItems,
                         timestamp: new Date().toLocaleTimeString()
-                    });
+                    });*/
                 }
             }
 

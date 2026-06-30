@@ -18,9 +18,31 @@
 //    debugger;
     // 1. Initialize the Zoom Apps SDK
     zoomSdk.config({
-        capabilities: ['getMeetingContext'] // Request capabilities your app needs
-    }).then(() => {
+        capabilities: ['getUserContext', 'getMeetingContext'] // Request capabilities your app needs
+    }).then(async () => {
         console.log("Zoom SDK configured successfully");
+
+        /*
+        // 1. Get the current user's secure context token from Zoom
+        const userContext = await zoomSdk.getUserContext();
+        const zoomToken = userContext.token;
+
+        // 2. Send the token to your backend to trigger the MCP actions
+        const response = await fetch('/api/mcp/sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${zoomToken}` // Pass it securely
+            },
+            body: JSON.stringify({
+                actions: ['jira', 'slack', 'outlook']
+            })
+        });
+
+        const result = await response.json();
+        console.log('MCP Sync Complete:', result);
+        */
+
     }).catch((error) => {
         console.error("Zoom SDK configuration failed", error);
     });
@@ -68,13 +90,17 @@
             source.onended = () => {
                 console.log('Audio play completed');
                 document.getElementById('status').innerText = "STAN is Active. Conversation Tracking In Progress!";
-                socket.emit("START_CONVERSATION_TRACKING");
+                setTimeout(() => {
+                    socket.emit("START_CONVERSATION_TRACKING");
+                }, 10000);
             };
 
         } catch (error) {
             console.error("Error decoding or playing audio via WebSocket:", error);
             document.getElementById('status').innerText = "Audio playback error.";
-            socket.emit("START_CONVERSATION_TRACKING");
+            setTimeout(() => {
+                socket.emit("START_CONVERSATION_TRACKING");
+            }, 10000);
             document.getElementById('status').innerText = "STAN is Active. Conversation Tracking In Progress!";
         }
     });
