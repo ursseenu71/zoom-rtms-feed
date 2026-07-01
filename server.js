@@ -116,7 +116,10 @@ io.on('connection', (socket) => {
 
     socket.on("ACTIVATE_STAN", async () => {
         console.log('STAN Activated! Generating audio Intro');
-        const llmResponse = await chatWithTranscript("STAN is activated from the Zoom App. Generate a greeting message from STAN end to the participants");
+
+        // **** TODO: Switch to Live once we have all the required approvals. *****
+//        const llmResponse = await chatWithTranscriptLIVE(undefined, "STAN is activated from the Zoom App. Generate a greeting message from STAN end to the participants");
+        const llmResponse = await chatWithTranscript(undefined, "User has activated STAN from the Zoom App. Introduce yourself to the meeting participants");
         console.log("\n--- Raw JSON Payload Received From STAN ---");
         console.log(JSON.stringify(llmResponse, null, 2));
         console.log("-------------------------------------------\n");
@@ -124,7 +127,6 @@ io.on('connection', (socket) => {
 //        const {summary, actionItems, jiraUpdates, slackNotifications} = uiDisplay;
 
         // API Call to JIRA MCP Server to get the context of the projects that the participants belong to. User the access token of the participants to pull the jira information.
-
 
         generateAudio(llmResponse, stanShortResponseAudio);
     });
@@ -520,8 +522,6 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                 const formatedTranscript = `User: ${msg.content.user_name} \n User Id: ${msg.content.user_id} \n Text: ${msg.content.data}`;
                 const conversation = `${timeStamp} \n <v ${msg.content.user_name}>${msg.content.data}</v>`
                 console.log(conversation)
-                queue.push(conversation);
-                console.log(queue);
                 io.emit('STAN_TEXT_RESPONSE', {
                     speaker: msg.content.user_name,
                     text: transcript,
@@ -537,7 +537,8 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                         timestamp: new Date().toLocaleTimeString()
                     });
                     console.log(`Triggered Keyword ${matchedKeyword}. Making LLM Call with the conversation`)
-                    const llmResponse = await chatWithTranscript(queue, jiraTickets);
+                    const llmResponse = await chatWithTranscript(queue, transcript);
+
                     console.log("\n--- Raw JSON Payload Received From STAN ---");
                     console.log(JSON.stringify(llmResponse, null, 2));
                     console.log("-------------------------------------------\n");
@@ -547,13 +548,8 @@ function connectToMediaWebSocket(mediaUrl, meetingUuid, streamId, signalingSocke
                     generateAudio(llmResponse, stanShortResponseAudio);
 
                     console.log(`Audio response from LLM is ${audioResponse}`)
-
-                    /*io.emit('STAN_TEXT_RESPONSE', {
-                        speaker: msg.content.user_name,
-                        text: actionItems,
-                        timestamp: new Date().toLocaleTimeString()
-                    });*/
                 }
+                queue.push(conversation);
             }
 
         } catch (err) {

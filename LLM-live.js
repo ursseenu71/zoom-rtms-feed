@@ -8,6 +8,7 @@ import { createJiraTicket, updateJiraTicketStatus, updateJiraServer } from './se
 import { postToSlackServer } from './services/slackMCP.js';
 import { sendOutlookEmail } from './services/outlookMCP.js';
 import { createServiceNowIncident } from './services/serviceNowMCP.js';
+import {localTokenCache, zoomToken} from "./routes/router";
 
 dotenv.config();
 
@@ -20,7 +21,7 @@ export async function getAudio(text) {}
 /**
  * Sends a transcript to OpenAI and handles automated live MCP tool execution based on intent.
  */
-export async function chatWithTranscriptLIVE(transcriptText, jiraTickets, authToken = null) {
+export async function chatWithTranscriptLIVE(transcriptText, jiraTickets) {
     try {
         // 1. Define the tools available for the LLM to call
         const tools = [
@@ -32,6 +33,7 @@ export async function chatWithTranscriptLIVE(transcriptText, jiraTickets, authTo
                     parameters: {
                         type: "object",
                         properties: {
+                            // TODO: Add additional mandatory fields based on project needs.
                             projectKey: { type: "string" },
                             summary: { type: "string" },
                             description: { type: "string" }
@@ -95,7 +97,7 @@ export async function chatWithTranscriptLIVE(transcriptText, jiraTickets, authTo
             messages: [
                 {
                     role: 'system',
-                    content: `You are STAN, an AI meeting assistant. Analyze the transcript. If the user explicitly asks to perform an action (like creating a ticket, sending an email, or messaging slack), invoke the corresponding tool.`
+                    content: `You are STAN, an AI meeting assistant. Analyze the transcript. If the user explicitly asks to perform an action (like creating a ticket, sending an email, messaging slack, retrieving history from slack, creating incident in service-now etc), invoke the corresponding tool.`
                 },
                 {
                     role: 'user',
@@ -125,17 +127,18 @@ export async function chatWithTranscriptLIVE(transcriptText, jiraTickets, authTo
                 // Dynamically direct parameters to the correct workspace file module
                 switch (functionName) {
                     case "createJiraTicket":
-                        executionResult = await createJiraTicket(token, functionArgs);
+                        executionResult = await createJiraTicket(localTokenCache.get(zoomToken).jiraRefresh, functionArgs);
                         break;
                     case "postToSlackServer":
-                        executionResult = await postToSlackServer(token, functionArgs);
+                        executionResult = await postToSlackServer(localTokenCache.get(zoomToken).slackRefresh, functionArgs);
                         break;
                     case "sendOutlookEmail":
-                        executionResult = await sendOutlookEmail(token, functionArgs);
+                        executionResult = await sendOutlookEmail(localTokenCache.get(zoomToken).outlookRefresh, functionArgs);
                         break;
                     case "createServiceNowIncident":
-                        executionResult = await createServiceNowIncident(token, functionArgs);
+                        executionResult = await createServiceNowIncident(localTokenCache.get(zoomToken).servicenowRefresh, functionArgs);
                         break;
+                        // TODO - get slack history, fetch recent production incidents from service-now, get jira tickets specific to a project etc
                 }
 
                 console.log(`MCP server action [${functionName}] successfully completed:`, executionResult);

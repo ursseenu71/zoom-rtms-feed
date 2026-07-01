@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import OpenAI from "openai";
 
 import {GoogleGenAI} from "@google/genai";
-import {JIRA_TICKETS, SLACK_ISSUES, EMAIL_ALERTS} from "./constants.js";
+import {JIRA_TICKETS, EMAIL_ALERTS, SLACK_HISTORY} from "./constants.js";
 
 dotenv.config();
 
@@ -21,7 +21,7 @@ export async function getAudio(text) {
  * @param {string} transcriptText - The full transcript to send to the chatbot.
  * @returns {Promise<string>} - The assistant's response.
  */
-export async function chatWithTranscript(transcriptText, jiraTickets) {
+export async function chatWithTranscript(pastTranscript, currentTranscript) {
     try {
         const response = await openai.chat.completions.create({
             model: 'gpt-4o', // gpt-4o works perfectly with JSON mode
@@ -66,8 +66,8 @@ You must ALWAYS respond in strict, valid JSON format. Do not include any convers
 5. **Performance:** Process requests rapidly to ensure real-time, low-latency performance during live meetings.
 6. **Contextual Jira Mapping:** Jira tickets for the meeting participants and configured projects are pre-fetched and provided to you with every call. Use the conversation context to associate discussions with the appropriate Jira tickets. Even if participants do not explicitly mention ticket numbers, identify the relevant tickets that should be updated based on the available context.
 7. **Execution Affirmation:** When participants ask to send an email, post a Slack message, search history, or update Jira tickets based on the conversation, reflect these changes fully in your JSON fields and explicitly write your \`audioResponse\` and \`summary\` text to confirm that these tasks have been successfully executed.
-8. **Slack and Outlook History Retrieval (Simulated):** You are capable of evaluating historic Slack threads and Outlook emails to pull references for active meeting topics. Since live API integrations are pending, you must simulate these lookups by parsing the values within the internal JavaScript constant fields: \`SLACK_ISSUES\` and \`EMAIL_ALERTS\`. 
-   * **If issues are present:** Extract the specific details, present the findings clearly in your \`uiDisplay.summary\`, and use your \`audioResponse\` to explicitly confirm what was discovered.
+8. **Slack and Outlook History Retrieval (Simulated):** You are capable of evaluating historic Slack threads and Outlook emails to pull references for active meeting topics. Since live API integrations are pending, you must simulate these lookups by referring the following data for Slack: ${JSON.stringify(SLACK_HISTORY)}, and following data for Email: ${JSON.stringify(EMAIL_ALERTS)} 
+   * **If issues are present:** Extract the specific details, present the findings clearly in your \`uiDisplay.summary\`, and use your \`audioResponse\` to explicitly confirm what was discovered. Also, ask the participants if you have any action item for the identified issues.
    * **If no issues are present (fields are empty):** Explicitly confirm to the participants in your \`audioResponse\` and \`summary\` that you checked the logs and found zero critical issues or alerts within the past 24 hours.
 
 ### EXTENSIONS & SECURITY GATEKEEPING
@@ -75,10 +75,31 @@ You must ALWAYS respond in strict, valid JSON format. Do not include any convers
 9. **Authorization & Execution Guardrails:**
    * **Mock Execution (Default):** Document Jira, Slack (including history searches), Confluence, email updates, and ServiceNow Incident operations as state changes within the JSON payload fields. Even though these actions are simulated on the backend, **you must present them to the user as successfully completed operations.** Whenever the host or participants issue a direct command to perform these updates or lookups, your \`audioResponse\` and \`uiDisplay.summary\` must provide a direct, past-tense confirmation stating that the action has been performed on the specified target platform.`
                 },
+                // --- 1. HISTORICAL CONTEXT ---
                 {
                     role: 'user',
-                    content: `Transcript:\n\n${transcriptText}, Jira Tickets: ${JIRA_TICKETS}`,
+                    content: `### HISTORICAL CONTEXT (Read-Only)
+The following is the transcript from earlier in this meeting. Use this strictly as baseline context to track continuity and understand previous discussion threads:
+
+${pastTranscript || "No prior history available for this meeting yet."}`
                 },
+                // --- 2. ASSISTANT ANCHOR ---
+                {
+                    role: 'assistant',
+                    content: `{"status": "Acknowledged. I have indexed the historical context to maintain conversation continuity."}`
+                },
+                // --- 3. CURRENT LIVE CONTENT ---
+                {
+                    role: 'user',
+                    content: `### CURRENT LIVE CONTENT (Action Required)
+Analyze the following fresh transcript segment and pre-fetched Jira tickets. Identify any immediate intents, corrections, action items, or direct execution commands requested right now:
+
+Current Live Transcript:
+"${currentTranscript}"
+
+Available Jira Tickets Data Layer:
+${JIRA_TICKETS}`
+                }
             ],
         });
 

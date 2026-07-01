@@ -22,13 +22,12 @@
     }).then(async () => {
         console.log("Zoom SDK configured successfully");
 
-        /*
         // 1. Get the current user's secure context token from Zoom
         const userContext = await zoomSdk.getUserContext();
         const zoomToken = userContext.token;
 
         // 2. Send the token to your backend to trigger the MCP actions
-        const response = await fetch('/api/mcp/sync', {
+        const response = await fetch('/api/authToken', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -40,8 +39,7 @@
         });
 
         const result = await response.json();
-        console.log('MCP Sync Complete:', result);
-        */
+        console.log('Auth Token Sync Complete:', result);
 
     }).catch((error) => {
         console.error("Zoom SDK configuration failed", error);

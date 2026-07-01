@@ -9,6 +9,24 @@ const getBaseUrl = () => {
     return `https://${domain}/rest/api/3`;
 };
 
+
+// method to retrieve the headless or user specific access token based on the requirement.
+async function getJiraAccessToken(refreshToken) {
+    const response = await fetch('https://auth.atlassian.com/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            grant_type: 'refresh_token',
+            client_id: process.env.JIRA_CLIENT_ID,
+            client_secret: process.env.JIRA_CLIENT_SECRET,
+            refresh_token: refreshToken
+        })
+    });
+
+    const data = await response.json();
+    return data.access_token; // Brand new valid 1-hour access token
+}
+
 /**
  * Existing Method: Adds a comment to a Jira ticket
  */

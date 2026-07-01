@@ -41,6 +41,16 @@ export const JIRA_TICKETS = [
     }
 ]
 
-export const SLACK_ISSUES = []
+/*export const SLACK_HISTORY = [
+    {
+        "shortDesc": "Batch email send failure impacting the GMV",
+        "status": "resolved",
+        "rootCause": "site wide issue bringing down the critical servers"
+    }
+]*/
 
 export const EMAIL_ALERTS = []
+
+export const SLACK_HISTORY = {"slack_Issues": ["Batch email send failure impacting the GMV", "XYZ long running query failed causing data out of sync in CRM L2 tables"]}
+
+// export const EMAIL_ALERTS = ["x-matters - Inbound CLM pipeline went down for 30 mins resulting in preference data discrepancies"]
